@@ -1,0 +1,7 @@
+**/imgs
+**/venv
+/chroma_db
+*.csv
+*.json
+.env
+.DS_Store
