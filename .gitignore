@@ -1,8 +1,9 @@
 **/imgs
-**/venv
+**/venv*
 /chroma_db
 *.csv
 *.json
 .env
 .DS_Store
 **/result
+**/__pycache__/
