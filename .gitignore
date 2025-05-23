@@ -1,5 +1,6 @@
 **/imgs
 **/venv*
+**/myenv*
 /chroma_db
 *.csv
 *.json
