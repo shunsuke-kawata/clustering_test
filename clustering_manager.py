@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import shutil
 import numpy as np
@@ -7,7 +8,9 @@ from sklearn.metrics import silhouette_score
 from chroma_db_manager import ChromaDBManager
 import uuid
 import re
-
+from embeddings_manager.sentence_embeddings_manager import SentenceEmbeddingsManager
+from embeddings_manager.image_embeddings_manager import ImageEmbeddingsManager
+from sklearn.metrics.pairwise import cosine_similarity
 class InitClustering:
     
     def __init__(self, chroma_db: ChromaDBManager, images_folder_path: str, output_base_path: str = './results'):
@@ -70,48 +73,91 @@ class InitClustering:
 
         return best_k, float(best_score)
     
-    def clustering(self, chroma_db_data: dict[str, list], cluster_num: int, output: bool = False):
+    def clustering(self, chroma_db_data: dict[str, list], cluster_num: int, output_folder: bool = False, output_json: bool = False):
         embeddings_np = np.array(chroma_db_data['embeddings'])
         result_uuids_dict = {
             i: {'folder_id': str(uuid.uuid4()), 'ids': []}
             for i in range(cluster_num)
         }
 
+        # 親クラスタリング
         model = AgglomerativeClustering(n_clusters=cluster_num)
         labels = model.fit_predict(embeddings_np)
 
-        if output:
+        if output_folder:
             if self._output_base_path.exists():
                 shutil.rmtree(self._output_base_path)
             self._output_base_path.mkdir(parents=True, exist_ok=True)
 
-            for cluster_id, info in result_uuids_dict.items():
-                (self._output_base_path / info['folder_id']).mkdir(parents=True, exist_ok=True)
-
         for i, label in enumerate(labels):
             result_uuids_dict[label]['ids'].append(chroma_db_data['ids'][i])
 
-            if output:
-                image_name = chroma_db_data['metadatas'][i].get('path')
-                origin_image_path = self._images_folder_path / image_name
+        #ベクトルの凝集度を計算する関数
+        def cohesion_cosine_similarity(vectors: list[float]) -> float:
+            vectors_np = np.array(vectors)
+            similarity_matrix = cosine_similarity(vectors_np)
+            n = len(vectors_np)
+            total = np.sum(similarity_matrix) - n
+            return total / (n * (n - 1))
 
-                if not origin_image_path.exists():
-                    print(f"[警告] 画像が見つかりません: {origin_image_path}")
-                    continue
+        # 子クラスタリング + 画像保存（末端フォルダのみに）
+        for key, value in result_uuids_dict.items():
+            folder_id = value['folder_id']
+            cluster_ids = value['ids']
+            chroma_db_data_in_cluster = self._chroma_db.query_by_ids(cluster_ids)
 
-                output_dir = self._output_base_path / result_uuids_dict[label]['folder_id']
-                filename = f"{i}_{origin_image_path.name}"
-                shutil.copy(origin_image_path, output_dir / filename)
+            images_embeddings = [
+                ImageEmbeddingsManager.image_to_embedding(self._images_folder_path / Path(metadata.path))
+                for metadata in chroma_db_data_in_cluster['metadatas']
+            ]
+
+            if len(images_embeddings) < 2:
+                continue
+
+            cluster_num_in_cluster, _ = cl_module.get_optimal_cluster_num(
+                embeddings=images_embeddings,
+                min_cluster_num=1,
+                max_cluster_num=min(len(images_embeddings), 10)
+            )
+
+            model_nested = AgglomerativeClustering(n_clusters=cluster_num_in_cluster)
+            labels_nested = model_nested.fit_predict(images_embeddings)
+
+            uuid_dict_in_cluster = {
+                i: {'folder_id': str(uuid.uuid4()), 'ids': []}
+                for i in range(cluster_num_in_cluster)
+            }
+
+            for idx, nested_label in enumerate(labels_nested):
+                uuid_dict_in_cluster[nested_label]['ids'].append(cluster_ids[idx])
+
+                if output_folder:
+                    nested_image_path = self._images_folder_path / Path(chroma_db_data_in_cluster['metadatas'][idx].path)
+                    if not nested_image_path.exists():
+                        print(f"[警告] ネスト画像が見つかりません: {nested_image_path}")
+                        continue
+
+                    output_nested_dir = self._output_base_path / folder_id / uuid_dict_in_cluster[nested_label]['folder_id']
+                    output_nested_dir.mkdir(parents=True, exist_ok=True)
+                    filename = f"{idx}_{nested_image_path.name}"
+                    shutil.copy(nested_image_path, output_nested_dir / filename)
+
+            result_uuids_dict[key]['inner'] = uuid_dict_in_cluster
+
+        if output_json:
+            self._output_base_path.mkdir(parents=True, exist_ok=True)
+            output_json_path = self._output_base_path / "result.json"
+            with open(output_json_path, "w", encoding="utf-8") as f:
+                json.dump(result_uuids_dict, f, ensure_ascii=False, indent=2)
 
         return result_uuids_dict
-
 if __name__ == "__main__":
     cl_module = InitClustering(
         chroma_db=ChromaDBManager('sentence_embeddings'),
         images_folder_path='./imgs',
         output_base_path='./results'
     )
-    
-    all_sentence_data = cl_module.chroma_db.get_all()
-    cluster_num, _ = cl_module.get_optimal_cluster_num(embeddings=all_sentence_data['embeddings'])
-    cluster_result = cl_module.clustering(chroma_db_data=all_sentence_data, cluster_num=cluster_num, output=True)
+    # print(type(all_sentence_data['metadatas'][0]))
+    cluster_num, _ = cl_module.get_optimal_cluster_num(embeddings=cl_module.chroma_db.get_all()['embeddings'])
+    # cl_module.chroma_db.get_all()['embeddings']
+    cluster_result = cl_module.clustering(chroma_db_data=cl_module.chroma_db.get_all(), cluster_num=cluster_num,output_folder=True)

@@ -6,6 +6,7 @@ from datetime import datetime
 import re
 from openai import OpenAI
 from dotenv import load_dotenv
+from pathlib import Path
 
 # .envファイルの内容を読み込見込む
 load_dotenv()
@@ -63,6 +64,20 @@ def generate_caption(encoded_image):
             print(f"Attempt {attempt + 1} failed: {e}")
     return False, None
 
+class CaptionManager:
+    
+    def _encode_image(image_path:Path)->str | None:
+        try:
+            with open(image_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
+        except Exception as e:
+            print(f"Error encoding image {image_path}: {e}")
+            return None 
+    
+    def _check_format(sentence:str)->bool:
+        pattern = r'The main object is .+? .+?\.\s*It\'s used for .+?\.\s*Its hypernym is .+?\.'
+        return re.match(pattern, sentence) is not None
+    
 # メイン関数
 def main():
     json_output_path = f"captions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

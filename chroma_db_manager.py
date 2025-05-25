@@ -46,7 +46,17 @@ class ChromaDBManager:
         
         def get_split_document(self)->list[str]:
             return re.findall(r'.+?\.(?=\s+[A-Z]|$)', self._document)
-            
+    
+    class ChromaDocument:
+        def __init__(self,document:str):
+            self._document = document
+        
+        @property
+        def document(self)->str:
+            return self.document
+        
+        def get_split_document(self)->list[str]:
+            return re.findall(r'.+?\.(?=\s+[A-Z]|$)', self._document)
     def __init__(self, colection_name:str,path="./chroma_db"):
         self.client = chromadb.PersistentClient(path=path)
         self.collection = self.client.get_or_create_collection(name=colection_name)
@@ -98,7 +108,21 @@ class ChromaDBManager:
     def delete(self, ids:list[str])->None:
         self.collection.delete(ids=ids)
 
-        #埋め込み表現でクエリを発行する
+    def query_by_ids(
+        self,
+        query_ids: list[str]
+    ) -> dict[str, list]:
+        results = self.collection.get(
+            ids=query_ids,
+            include=["documents", "metadatas", "embeddings"]
+        )
+        return {
+            'ids': results['ids'],
+            'metadatas': [self.ChromaMetaData(id=metadata['id'],path=metadata['path'],document=metadata['document'],is_success=metadata['is_success']) for metadata in results['metadatas']],
+            'documents':[self.ChromaDocument(document=document) for document in results['documents']],
+            'embeddings': results['embeddings'],
+        }
+    
     def query_by_embeddings(
         self,
         query_embeddings: list[list[float]],
@@ -110,15 +134,15 @@ class ChromaDBManager:
             n_results=n_results,
             include=["documents", "metadatas", "distances", "embeddings"]
         )
-        print(results['uris'],results['included'],results['data'])
         
         result_dict = {
             'ids':results['ids'][0],
-            'metadatas':results['metadatas'][0],
-            'documents':results['documents'][0],
+            'metadatas':[self.ChromaMetaData(id=metadata['id'],path=metadata['path'],document=metadata['document'],is_success=metadata['is_success']) for metadata in results['metadatas'][0]],
+            'documents':[self.ChromaDocument(document=document)for document in results['documents'][0]],
             "embeddings":results['embeddings'][0],
             'distances':results['distances'][0],
         }
+        
 
         # distance_threshold が指定されていない場合はそのまま返す
         if distance_threshold is not None:
@@ -130,10 +154,11 @@ class ChromaDBManager:
                 'distances': [],
             }
 
-            for _id, meta, doc, emb, dist in zip(result_dict['ids'],result_dict['metadatas'],result_dict['documents'],result_dict['embeddings'],result_dict['distances']):
+            for _id, meta, doc, emb, dist in zip(results['ids'][0],results['metadatas'][0],results['documents'][0],results['embeddings'][0],results['distances'][0]):
+                meta_obj = self.ChromaMetaData(id=meta['id'],path=meta['path'],document=meta['document'],is_success=meta['is_success'])
                 if dist <= distance_threshold:
                     filtered_result['ids'].append(_id)
-                    filtered_result['metadatas'].append(meta)
+                    filtered_result['metadatas'].append(meta_obj)
                     filtered_result['documents'].append(doc)
                     filtered_result['embeddings'].append(emb)
                     filtered_result['distances'].append(dist)
