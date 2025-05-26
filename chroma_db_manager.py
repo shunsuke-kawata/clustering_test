@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -5,14 +6,14 @@ import uuid
 import chromadb
 from embeddings_manager.sentence_embeddings_manager import SentenceEmbeddingsManager
 from embeddings_manager.image_embeddings_manager import ImageEmbeddingsManager
-
+from utils import Utils
 class ChromaDBManager:
     
     class ChromaMetaData:
         def __init__(self, path: str,document:str,is_success: bool,id:str | None=None):
             #新規作成の場合UUIDを設定,そうでない時、引数から継承
             if id is None:
-                self._id = str(uuid.uuid4())
+                self._id = Utils.generate_uuid()
             else:
                 self._id = id
             
@@ -186,17 +187,16 @@ if __name__ == "__main__":
 
     # Sentence Embedding（テキストベース）
     sentence_db_manager = ChromaDBManager("sentence_embeddings")
-    sentence_db_manager.add(
-        documents=[meta.document for meta in metadatas],  # または meta.caption にしたければ ChromaMetaData にフィールド追加が必要
-        metadatas=metadatas,
-        embeddings=[SentenceEmbeddingsManager.sentence_to_embedding(item["caption"]) for item in succeed_data]
-    )
-    
     embeddings = SentenceEmbeddingsManager.sentence_to_embedding("The main object is a red and white rectangular USB flash drive. It's used for data storage and transfer. Its hypernym is a data storage device.")
     
     res = sentence_db_manager.query_by_embeddings(embeddings)
-    
-# 
+    print(res)
+    # sentence_db_manager.add(
+    #     documents=[meta.document for meta in metadatas],  # または meta.caption にしたければ ChromaMetaData にフィールド追加が必要
+    #     metadatas=metadatas,
+    #     embeddings=[SentenceEmbeddingsManager.sentence_to_embedding(item["caption"]) for item in succeed_data]
+    # )
+     
     # # Image Embedding（画像ベース）
     # image_db_manager = ChromaDBManager("image_embeddings")
     # image_db_manager.add(
@@ -204,3 +204,4 @@ if __name__ == "__main__":
     #     embeddings=[ImageEmbeddingsManager.image_to_embedding(f"./imgs/{item['path']}") for item in succeed_data],
     #     metadatas=metadatas
     # )
+    
