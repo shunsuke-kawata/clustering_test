@@ -74,6 +74,8 @@ class InitClustering:
         return best_k, float(best_score)
     
     def clustering(self, chroma_db_data: dict[str, list], cluster_num: int, output_folder: bool = False, output_json: bool = False):
+        
+
         embeddings_np = np.array(chroma_db_data['embeddings'])
         result_uuids_dict = {}
 
@@ -88,14 +90,16 @@ class InitClustering:
 
         # 各親クラスタにUUIDを割り当て
         for idx in range(cluster_num):
-            folder_id = f"{idx}_{Utils.generate_uuid()}"
+            folder_id = Utils.generate_uuid()
             result_uuids_dict[idx] = {'folder_id': folder_id, 'ids': []}
+        
+        # result_uuids_dict['root_folder_id'] = Utils.generate_uuid()
 
         for i, label in enumerate(labels):
             result_uuids_dict[label]['ids'].append(chroma_db_data['ids'][i])
 
         # コサイン凝集度の計算
-        def cohesion_cosine_similarity(vectors: list[float]) -> float:
+        def _cohesion_cosine_similarity(vectors: list[float]) -> float:
             vectors_np = np.array(vectors)
             similarity_matrix = cosine_similarity(vectors_np)
             n = len(vectors_np)
@@ -117,9 +121,9 @@ class InitClustering:
             if len(images_embeddings) < 2:
                 continue
 
-            cohesion = cohesion_cosine_similarity(images_embeddings)
+            cohesion = _cohesion_cosine_similarity(images_embeddings)
 
-            if cohesion >= 0.7:
+            if cohesion >= 0.70:
                 # 親クラスタとして保存（並列コピー）
                 if output_folder:
                     output_dir = self._output_base_path / folder_id
@@ -144,7 +148,7 @@ class InitClustering:
             uuid_dict_in_cluster = {}
 
             for i in range(cluster_num_in_cluster):
-                child_folder_id = f"{i}_{Utils.generate_uuid()}"
+                child_folder_id = Utils.generate_uuid()
                 uuid_dict_in_cluster[i] = {'folder_id': child_folder_id, 'ids': []}
 
             for idx, nested_label in enumerate(labels_nested):
@@ -169,14 +173,20 @@ class InitClustering:
 
             result_uuids_dict[key]['inner'] = uuid_dict_in_cluster
 
+        #出力するjsonの型を整形
+        output_json = {
+            "root_folder_id": Utils.generate_uuid(),
+            "results": result_uuids_dict
+        }
         # JSON出力
         if output_json:
             self._output_base_path.mkdir(parents=True, exist_ok=True)
             output_json_path = self._output_base_path / "result.json"
             with open(output_json_path, "w", encoding="utf-8") as f:
-                json.dump(result_uuids_dict, f, ensure_ascii=False, indent=2)
+                
+                json.dump(output_json, f, ensure_ascii=False, indent=2)
 
-        return result_uuids_dict
+        return output_json
     
 if __name__ == "__main__":
     cl_module = InitClustering(
